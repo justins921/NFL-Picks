@@ -115,13 +115,18 @@ driver.
    database, and copy its **URL** (`libsql://<name>.turso.io`) and an **auth
    token**.
 
-2. **Create the tables and the family**, once, from your laptop:
+2. **Create the tables and the family**, once. Either paste
+   [`scripts/setup.sql`](scripts/setup.sql) into Turso's SQL runner — no local
+   checkout needed — or, if you have the repo cloned:
 
    ```bash
    DATABASE_URL=libsql://<name>.turso.io \
    DATABASE_AUTH_TOKEN=<token> \
    npm run db:setup
    ```
+
+   Edit the names at the bottom of that file first if you want your real family
+   from the start. You can also add and remove people later in the app.
 
 3. **Import the repo** at [vercel.com/new](https://vercel.com/new). Everything is
    detected automatically — no build settings to change.
