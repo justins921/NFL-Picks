@@ -14,7 +14,9 @@ export function SetupProblem({ detail }: { detail: string }) {
         <li>
           <span className="text-chalk">DATABASE_AUTH_TOKEN</span> is a full
           read &amp; write token, pasted whole. It&apos;s long, and a truncated
-          copy fails exactly like this.
+          copy fails exactly like this. Use Turso&apos;s copy button rather than
+          selecting the text — a manual selection can pick up invisible
+          characters.
         </li>
         <li>
           <span className="text-chalk">DATABASE_URL</span> matches the URL on the

@@ -3,6 +3,7 @@ import { drizzle } from "drizzle-orm/libsql";
 import { mkdirSync } from "node:fs";
 import { dirname } from "node:path";
 import { withBootstrap } from "./bootstrap";
+import { clean } from "./credentials";
 import * as schema from "./schema";
 
 /**
@@ -14,8 +15,8 @@ import * as schema from "./schema";
  * wiped on every deploy. Hosted libSQL keeps the same SQLite dialect, which is
  * why the schema and every query in this app are unchanged between the two.
  */
-const url = process.env.DATABASE_URL ?? "file:./data/picks.db";
-const authToken = process.env.DATABASE_AUTH_TOKEN;
+const url = clean(process.env.DATABASE_URL) || "file:./data/picks.db";
+const authToken = clean(process.env.DATABASE_AUTH_TOKEN) || undefined;
 
 
 if (url.startsWith("file:")) {

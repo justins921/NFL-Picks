@@ -133,5 +133,25 @@ check("pushes excluded from win pct", A.winPct, 0.75);
   }
 }
 
+// --- credentials survive a copy-paste that picks up invisible characters ---
+{
+  const { clean } = await import("@/db/credentials");
+  const SEP = String.fromCharCode(0x2028); // line separator, as pasted from a wrapped page
+
+  check("strips a U+2028 line separator", clean(`abc${SEP}def`), "abcdef");
+  check("strips newlines and stray spaces", clean(" ab\ncd\r\n ef "), "abcdef");
+  check("strips a non-breaking space", clean("ab\u00a0cd"), "abcd");
+  check("leaves a clean value alone", clean("libsql://x.turso.io"), "libsql://x.turso.io");
+  check("passes undefined through", clean(undefined), undefined);
+
+  let rejected = false;
+  try {
+    clean("token-with-emoji-🎉");
+  } catch {
+    rejected = true;
+  }
+  check("rejects a character that cannot go in a header", rejected, true);
+}
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);
