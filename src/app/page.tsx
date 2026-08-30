@@ -7,7 +7,13 @@ import { WeekSelector } from "@/components/WeekSelector";
 import { hasFamilyAccess, getCurrentUser } from "@/lib/auth";
 import { getCurrentWeek, getWeekSlate, isLocked, REGULAR_SEASON } from "@/lib/espn/season";
 import { centralDayKey, formatDayHeading } from "@/lib/format";
-import { getPicksForWeek, getStandings, gradePick } from "@/lib/picks";
+import {
+  getFamilyPicksForLockedGames,
+  getPicksForWeek,
+  getStandings,
+  getWeekProgress,
+  gradePick,
+} from "@/lib/picks";
 import { db } from "@/db";
 import { games as gamesTable } from "@/db/schema";
 import { and, eq } from "drizzle-orm";
@@ -49,6 +55,25 @@ export default async function WeekPage({
 
   const standings = await getStandings(season, REGULAR_SEASON);
   const myRow = standings.find((r) => r.userId === user.id);
+
+  // Everyone's picks are revealed only once a game has kicked off, and the
+  // gating happens here: picks for games still open are never loaded, so they
+  // can't reach the browser at all.
+  const lockedGameIds = slate.games.filter((g) => isLocked(g)).map((g) => g.id);
+  const [familyPicks, progress] = await Promise.all([
+    getFamilyPicksForLockedGames(lockedGameIds),
+    getWeekProgress(season, REGULAR_SEASON, week),
+  ]);
+
+  const revealedByGame = new Map<string, { home: string[]; away: string[] }>();
+  for (const game of slate.games) {
+    const forGame = familyPicks.filter((p) => p.gameId === game.id);
+    if (forGame.length === 0) continue;
+    revealedByGame.set(game.id, {
+      home: forGame.filter((p) => p.pickedTeamId === game.home.id).map((p) => p.name).sort(),
+      away: forGame.filter((p) => p.pickedTeamId === game.away.id).map((p) => p.name).sort(),
+    });
+  }
 
   const openGames = slate.games.filter((g) => !isLocked(g));
   const madeOnOpen = openGames.filter((g) => pickByGame.has(g.id)).length;
@@ -93,6 +118,25 @@ export default async function WeekPage({
           )}
         </div>
 
+        {progress.length > 1 && slate.games.length > 0 ? (
+          <div className="mt-3 rounded-xl border border-line bg-surface/40 px-4 py-3">
+            <p className="mb-2 text-xs font-bold text-muted">Who&apos;s in</p>
+            <ul className="flex flex-wrap gap-x-3 gap-y-1.5">
+              {progress.map((row) => {
+                const done = row.made >= slate.games.length;
+                return (
+                  <li key={row.userId} className="text-xs tabular-nums">
+                    <span className={done ? "font-bold" : ""}>{row.name}</span>{" "}
+                    <span className={done ? "text-win" : "text-muted"}>
+                      {done ? "done" : `${row.made}/${slate.games.length}`}
+                    </span>
+                  </li>
+                );
+              })}
+            </ul>
+          </div>
+        ) : null}
+
         {week === 1 && !seasonStarted && slate.games.length > 0 ? (
           <p className="mt-3 rounded-xl border border-line bg-surface/40 px-4 py-3 text-sm text-muted">
             Week 1 hasn&apos;t kicked off yet — get your picks in early.
@@ -121,6 +165,7 @@ export default async function WeekPage({
                       game={game}
                       pickedTeamId={picked}
                       locked={isLocked(game)}
+                      revealed={revealedByGame.get(game.id) ?? null}
                       result={
                         picked
                           ? gradePick(picked, {

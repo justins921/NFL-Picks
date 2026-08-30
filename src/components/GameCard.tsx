@@ -12,6 +12,12 @@ interface Props {
   pickedTeamId: string | null;
   locked: boolean;
   result: PickResult;
+  /**
+   * Who picked this team, for locked games only. The server sends nothing at
+   * all for a game that hasn't kicked off, so there is no hidden data here to
+   * be dug out of the page.
+   */
+  revealed?: { home: string[]; away: string[] } | null;
 }
 
 function scoreline(game: Game, team: Team): string | null {
@@ -43,6 +49,7 @@ function TeamRow({
   result,
   onPick,
   pending,
+  pickedBy,
 }: {
   game: Game;
   team: Team;
@@ -51,6 +58,7 @@ function TeamRow({
   result: PickResult;
   onPick: () => void;
   pending: boolean;
+  pickedBy: string[];
 }) {
   const score = scoreline(game, team);
   const isWinner = game.completed && game.winnerTeamId === team.id;
@@ -93,6 +101,18 @@ function TeamRow({
           {record ? <span>{record}</span> : null}
           {prob != null ? <span>{prob}%</span> : null}
         </span>
+        {pickedBy.length > 0 ? (
+          <span className="mt-1 flex flex-wrap gap-1">
+            {pickedBy.map((name) => (
+              <span
+                key={name}
+                className="rounded-full bg-surface-2 px-1.5 py-0.5 text-[10px] font-bold text-muted"
+              >
+                {name}
+              </span>
+            ))}
+          </span>
+        ) : null}
       </span>
 
       {score !== null ? (
@@ -104,7 +124,7 @@ function TeamRow({
   );
 }
 
-export function GameCard({ game, pickedTeamId, locked, result }: Props) {
+export function GameCard({ game, pickedTeamId, locked, result, revealed }: Props) {
   const [state, formAction] = useActionState<PickActionState, FormData>(makePick, { error: null });
   const [isPending, startTransition] = useTransition();
   const [optimisticPick, setOptimisticPick] = useOptimistic(pickedTeamId);
@@ -156,6 +176,7 @@ export function GameCard({ game, pickedTeamId, locked, result }: Props) {
           result={result}
           onPick={() => pick(game.away.id)}
           pending={isPending}
+          pickedBy={revealed?.away ?? []}
         />
         <TeamRow
           game={game}
@@ -165,11 +186,17 @@ export function GameCard({ game, pickedTeamId, locked, result }: Props) {
           result={result}
           onPick={() => pick(game.home.id)}
           pending={isPending}
+          pickedBy={revealed?.home ?? []}
         />
       </div>
 
       {locked && !optimisticPick ? (
         <p className="mt-2 px-1 text-xs text-muted">Locked — no pick made.</p>
+      ) : null}
+      {!locked ? (
+        <p className="mt-2 px-1 text-xs text-muted">
+          Everyone&apos;s picks show here at kickoff.
+        </p>
       ) : null}
       {state.error ? <p className="mt-2 px-1 text-xs text-loss">{state.error}</p> : null}
     </article>

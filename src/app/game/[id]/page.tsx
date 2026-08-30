@@ -7,7 +7,7 @@ import { WinProbabilityBar } from "@/components/WinProbabilityBar";
 import { getCurrentUser, hasFamilyAccess } from "@/lib/auth";
 import { getGameDetail, isLocked } from "@/lib/espn/season";
 import { formatKickoff } from "@/lib/format";
-import { getPicksForGames, gradePick } from "@/lib/picks";
+import { getFamilyPicksForLockedGames, getMyPickForGame, gradePick } from "@/lib/picks";
 import type { LastFiveGame, Team, TeamSeasonStats } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
@@ -71,7 +71,13 @@ export default async function GameDetailPage({ params }: { params: Promise<{ id:
   const { game, injuries, stats, lastFive } = detail;
   const locked = isLocked(game);
 
-  const myPick = (await getPicksForGames([game.id])).find((p) => p.userId === user.id) ?? null;
+  const myPick = await getMyPickForGame(user.id, game.id);
+
+  // Nothing is loaded for a game that hasn't started, so there is no way to
+  // read another person's pick early.
+  const familyPicks = locked ? await getFamilyPicksForLockedGames([game.id]) : [];
+  const pickedHome = familyPicks.filter((p) => p.pickedTeamId === game.home.id).map((p) => p.name).sort();
+  const pickedAway = familyPicks.filter((p) => p.pickedTeamId === game.away.id).map((p) => p.name).sort();
   const result = myPick ? gradePick(myPick.pickedTeamId, game) : "pending";
   const pickedTeam =
     myPick?.pickedTeamId === game.home.id ? game.home : myPick?.pickedTeamId === game.away.id ? game.away : null;
@@ -152,6 +158,58 @@ export default async function GameDetailPage({ params }: { params: Promise<{ id:
             >
               Make your pick
             </Link>
+          )}
+        </section>
+
+        <section className="mt-4 rounded-2xl border border-line bg-surface/60 p-4">
+          <h2 className="mb-3 text-sm font-bold">Family picks</h2>
+          {!locked ? (
+            <p className="text-sm text-muted">
+              Hidden until kickoff — nobody can see who picked what while the game
+              is still open.
+            </p>
+          ) : familyPicks.length === 0 ? (
+            <p className="text-sm text-muted">Nobody picked this one.</p>
+          ) : (
+            <div className="grid grid-cols-2 gap-3">
+              {(
+                [
+                  [game.away, pickedAway],
+                  [game.home, pickedHome],
+                ] as const
+              ).map(([team, names]) => {
+                const won = game.completed && game.winnerTeamId === team.id;
+                const lost = game.completed && game.winnerTeamId !== team.id && game.winnerTeamId !== "TIE";
+                return (
+                  <div key={team.id}>
+                    <p className="mb-1.5 flex items-center gap-1.5 text-xs font-bold text-muted">
+                      <Image src={team.logo} alt="" width={16} height={16} className="size-4" unoptimized />
+                      {team.abbreviation}
+                    </p>
+                    {names.length === 0 ? (
+                      <p className="text-xs text-muted">—</p>
+                    ) : (
+                      <ul className="flex flex-col gap-1">
+                        {names.map((name) => (
+                          <li
+                            key={name}
+                            className={`rounded-lg px-2 py-1 text-sm ${
+                              won
+                                ? "bg-win/15 text-win"
+                                : lost
+                                  ? "bg-loss/10 text-loss"
+                                  : "bg-surface-2"
+                            }`}
+                          >
+                            {name}
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
           )}
         </section>
 

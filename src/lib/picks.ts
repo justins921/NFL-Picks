@@ -28,9 +28,74 @@ export function getPicksForWeek(userId: number, season: number, seasonType: numb
     );
 }
 
-export async function getPicksForGames(gameIds: string[]) {
-  if (gameIds.length === 0) return [];
-  return db.select().from(picksTable).where(inArray(picksTable.gameId, gameIds));
+export async function getMyPickForGame(userId: number, gameId: string) {
+  const rows = await db
+    .select()
+    .from(picksTable)
+    .where(and(eq(picksTable.userId, userId), eq(picksTable.gameId, gameId)))
+    .limit(1);
+  return rows[0] ?? null;
+}
+
+export interface FamilyPick {
+  gameId: string;
+  userId: number;
+  name: string;
+  pickedTeamId: string;
+}
+
+/**
+ * Everyone's picks for the given games.
+ *
+ * Only ever call this with games that have already kicked off. Whose pick is
+ * whose stays secret until the game locks, and the way that is guaranteed is by
+ * never loading the rows in the first place — the caller filters the game list,
+ * so an unlocked pick is never sent to a browser to be hidden with CSS.
+ *
+ * Includes people who have since been removed from the family, so past weeks
+ * still read correctly.
+ */
+export async function getFamilyPicksForLockedGames(lockedGameIds: string[]): Promise<FamilyPick[]> {
+  if (lockedGameIds.length === 0) return [];
+  return db
+    .select({
+      gameId: picksTable.gameId,
+      userId: picksTable.userId,
+      name: users.name,
+      pickedTeamId: picksTable.pickedTeamId,
+    })
+    .from(picksTable)
+    .innerJoin(users, eq(picksTable.userId, users.id))
+    .where(inArray(picksTable.gameId, lockedGameIds));
+}
+
+/** How far through the week each family member is. Counts only — no teams. */
+export async function getWeekProgress(
+  season: number,
+  seasonType: number,
+  week: number,
+): Promise<{ userId: number; name: string; made: number }[]> {
+  const [family, weekPicks] = await Promise.all([
+    db.select().from(users).where(eq(users.active, true)),
+    db
+      .select()
+      .from(picksTable)
+      .where(
+        and(
+          eq(picksTable.season, season),
+          eq(picksTable.seasonType, seasonType),
+          eq(picksTable.week, week),
+        ),
+      ),
+  ]);
+
+  return family
+    .map((u) => ({
+      userId: u.id,
+      name: u.name,
+      made: weekPicks.filter((p) => p.userId === u.id).length,
+    }))
+    .sort((a, b) => b.made - a.made || a.name.localeCompare(b.name));
 }
 
 /** A tie is a push — nobody gets credit, nobody takes a loss. */

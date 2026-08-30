@@ -1,19 +1,41 @@
 @import "tailwindcss";
 
+/*
+ * Light is the base palette and dark overrides it below, both keyed off the
+ * system setting. Every colour in the app is one of these tokens, so the two
+ * themes stay in step — a component never hard-codes a shade.
+ */
 @theme {
-  --color-field: #0b1220;
-  --color-surface: #131c2e;
-  --color-surface-2: #1b2740;
-  --color-line: #26334d;
-  --color-chalk: #e8edf7;
-  --color-muted: #90a0bd;
-  --color-win: #2fbf71;
-  --color-loss: #e2504e;
-  --color-warn: #f0a33c;
+  --color-field: #f2f5f9;
+  --color-surface: #ffffff;
+  --color-surface-2: #e7ecf3;
+  --color-line: #d5dde8;
+  --color-chalk: #101a2b;
+  --color-muted: #5b6b84;
+  --color-win: #12864b;
+  --color-loss: #c8322f;
+  --color-warn: #a55a06;
+  --color-flag: #8a6300;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --color-field: #0b1220;
+    --color-surface: #131c2e;
+    --color-surface-2: #1b2740;
+    --color-line: #26334d;
+    --color-chalk: #e8edf7;
+    --color-muted: #90a0bd;
+    --color-win: #2fbf71;
+    --color-loss: #e2504e;
+    --color-warn: #f0a33c;
+    --color-flag: #f5d565;
+  }
 }
 
 html {
-  color-scheme: dark;
+  /* Lets form controls, scrollbars and the like follow the same setting. */
+  color-scheme: light dark;
   /* Stops iOS Safari from bumping the font size when the phone rotates. */
   -webkit-text-size-adjust: 100%;
 }

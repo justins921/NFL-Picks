@@ -58,6 +58,13 @@ first `npm run db:seed`.
   save what the report said at the time, so a Thursday injury update doesn't
   quietly rewrite what you were looking at when you picked.
 - **Times are shown in Central** with the local weekday.
+- **Nobody sees anyone else's picks until kickoff.** Everyone's picks appear on
+  a game the moment it starts, and not before. The guarantee isn't hidden markup
+  — picks for a game that's still open are never loaded from the database, so
+  they never reach a browser. What you can see beforehand is how many games each
+  person has picked, which gives away nothing about who they took.
+- **Light or dark follows the phone.** Every colour is a token defined once per
+  theme, so the two stay in step.
 - **An empty database installs itself.** The first query creates the tables and
   the starting family, so a new deployment needs no setup step. The seed only
   fires when the users table is genuinely empty — since removing someone is a

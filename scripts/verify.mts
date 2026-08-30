@@ -14,7 +14,7 @@ if (!process.env.DATABASE_URL?.includes("test")) {
 import { db } from "@/db";
 import { migrate } from "@/db/migrate";
 import { games, picks, users } from "@/db/schema";
-import { gradePick, getStandings, savePick, formatStreak } from "@/lib/picks";
+import { gradePick, getStandings, savePick, formatStreak, getFamilyPicksForLockedGames } from "@/lib/picks";
 import { isLocked } from "@/lib/espn/season";
 import type { Game, Team } from "@/lib/types";
 
@@ -103,6 +103,28 @@ check("standings sorted by wins", table.map((r) => r.name), ["A", "B"]);
 check("A week 1 record", A.weeklyRecords.find((w) => w.week === 1), { week: 1, wins: 2, losses: 0, pushes: 0 });
 check("A week 2 record", A.weeklyRecords.find((w) => w.week === 2), { week: 2, wins: 0, losses: 1, pushes: 1 });
 check("pushes excluded from win pct", A.winPct, 0.75);
+
+// --- other people's picks are only readable once a game has locked ---
+// The guarantee is that unlocked picks are never loaded, so the check that
+// matters is that this helper returns strictly what it was asked for.
+{
+  await db.delete(picks);
+  await db.insert(picks).values([
+    { userId: 1, gameId: "locked1", season: 2026, seasonType: 2, week: 1, pickedTeamId: "A" },
+    { userId: 2, gameId: "locked1", season: 2026, seasonType: 2, week: 1, pickedTeamId: "B" },
+    { userId: 1, gameId: "open1", season: 2026, seasonType: 2, week: 1, pickedTeamId: "A" },
+    { userId: 2, gameId: "open1", season: 2026, seasonType: 2, week: 1, pickedTeamId: "B" },
+  ]);
+
+  const revealed = await getFamilyPicksForLockedGames(["locked1"]);
+  check("reveals every family member for a locked game",
+    revealed.map((r) => r.name).sort(), ["A", "B"]);
+  check("reveals nothing for a game not passed in",
+    revealed.some((r) => r.gameId === "open1"), false);
+  check("reveals nothing when no games have locked",
+    (await getFamilyPicksForLockedGames([])).length, 0);
+  await db.delete(picks);
+}
 
 // --- the driver wrapper must work for both client kinds ---
 // The remote client's `closed` getter reads a private field. A wrapper that

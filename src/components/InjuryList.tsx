@@ -4,7 +4,7 @@ const BADGE: Record<InjuryStatus, string> = {
   Out: "bg-loss/20 text-loss border-loss/40",
   "Injured Reserve": "bg-loss/15 text-loss/90 border-loss/30",
   Doubtful: "bg-warn/20 text-warn border-warn/40",
-  Questionable: "bg-yellow-400/15 text-yellow-300 border-yellow-400/30",
+  Questionable: "bg-flag/15 text-flag border-flag/40",
   Suspension: "bg-surface-2 text-muted border-line",
   "Day-To-Day": "bg-surface-2 text-muted border-line",
   Other: "bg-surface-2 text-muted border-line",
