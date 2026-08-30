@@ -104,5 +104,34 @@ check("A week 1 record", A.weeklyRecords.find((w) => w.week === 1), { week: 1, w
 check("A week 2 record", A.weeklyRecords.find((w) => w.week === 2), { week: 2, wins: 0, losses: 1, pushes: 1 });
 check("pushes excluded from win pct", A.winPct, 0.75);
 
+// --- the driver wrapper must work for both client kinds ---
+// The remote client's `closed` getter reads a private field. A wrapper that
+// forwards property access with itself as the receiver throws on it — and,
+// because the local file-backed client has no such getter, that failure only
+// ever shows up once deployed.
+{
+  const { createClient } = await import("@libsql/client");
+  const { withBootstrap } = await import("@/db/bootstrap");
+
+  for (const [kind, url] of [
+    ["local file", "file:./data/test-wrapper.db"],
+    ["remote", "libsql://example.turso.io"],
+  ] as const) {
+    const wrapped = withBootstrap(createClient({ url, authToken: "x" }));
+    let ok = true;
+    try {
+      void wrapped.closed;
+      void wrapped.protocol;
+    } catch {
+      ok = false;
+    }
+    check(`${kind} client: wrapper exposes closed/protocol`, ok, true);
+    check(`${kind} client: wrapper keeps the query methods`,
+      ["execute", "batch", "migrate", "transaction", "executeMultiple"]
+        .every((m) => typeof (wrapped as unknown as Record<string, unknown>)[m] === "function"),
+      true);
+  }
+}
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

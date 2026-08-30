@@ -17,8 +17,21 @@ import * as schema from "./schema";
 const url = process.env.DATABASE_URL ?? "file:./data/picks.db";
 const authToken = process.env.DATABASE_AUTH_TOKEN;
 
+
 if (url.startsWith("file:")) {
-  mkdirSync(dirname(url.slice("file:".length)), { recursive: true });
+  try {
+    mkdirSync(dirname(url.slice("file:".length)), { recursive: true });
+  } catch (cause) {
+    // A file-backed database is fine on a host with a real disk, but not on a
+    // read-only one like Vercel — where this failing means DATABASE_URL was
+    // never set. EROFS on its own doesn't explain that, so spell it out.
+    throw new Error(
+      `Could not create the folder for ${url}. If this is a hosted deployment, ` +
+        "set DATABASE_URL to a libsql:// URL and DATABASE_AUTH_TOKEN — its " +
+        "filesystem is read-only, so a file-backed database can't work there.",
+      { cause },
+    );
+  }
 }
 
 // Next reloads modules on every edit in dev; reuse one client so we don't leak
@@ -31,3 +44,19 @@ globalForDb.__picksClient = client;
 
 export const db = drizzle(client, { schema });
 export { client, schema };
+
+/**
+ * Driver errors nest the useful part — an auth failure or a bad host — inside
+ * `cause`, under a generic "Failed query" wrapper. Flatten the chain so the
+ * actual reason is visible.
+ */
+export function describeDbError(error: unknown): string {
+  const parts: string[] = [];
+  let current: unknown = error;
+  while (current instanceof Error && parts.length < 4) {
+    const code = (current as Error & { code?: string }).code;
+    parts.push(code ? `${code}: ${current.message}` : current.message);
+    current = current.cause;
+  }
+  return parts.join("\n\n") || String(error);
+}

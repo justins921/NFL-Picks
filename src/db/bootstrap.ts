@@ -60,21 +60,37 @@ export function createBootstrapper(raw: Client): () => Promise<void> {
  * Wraps the driver so the schema check happens before the first query, whatever
  * that query turns out to be. Doing it here rather than at each call site means
  * a query added later can't accidentally skip it.
+ *
+ * This delegates member by member rather than using a Proxy. A Proxy forwarding
+ * `Reflect.get` with itself as the receiver breaks getters that read private
+ * fields — the remote client's `closed` does exactly that, and it throws
+ * "Cannot read private member". The local file-backed client has no such
+ * getter, so a Proxy looks fine in development and only fails once deployed.
  */
 export function withBootstrap(raw: Client): Client {
   const ensure = createBootstrapper(raw);
 
-  return new Proxy(raw, {
-    get(target, prop, receiver) {
-      const value = Reflect.get(target, prop, receiver);
-      if (typeof value !== "function") return value;
-      if (prop !== "execute" && prop !== "batch" && prop !== "migrate" && prop !== "transaction") {
-        return value.bind(target);
-      }
-      return async (...args: unknown[]) => {
-        await ensure();
-        return (value as (...a: unknown[]) => unknown).apply(target, args);
-      };
+  const gate =
+    <A extends unknown[], R>(method: (...args: A) => Promise<R>) =>
+    async (...args: A): Promise<R> => {
+      await ensure();
+      return method.apply(raw, args);
+    };
+
+  return {
+    execute: gate(raw.execute) as Client["execute"],
+    batch: gate(raw.batch) as Client["batch"],
+    migrate: gate(raw.migrate) as Client["migrate"],
+    transaction: gate(raw.transaction) as Client["transaction"],
+    executeMultiple: gate(raw.executeMultiple) as Client["executeMultiple"],
+    sync: () => raw.sync(),
+    close: () => raw.close(),
+    reconnect: () => raw.reconnect(),
+    get closed() {
+      return raw.closed;
     },
-  });
+    get protocol() {
+      return raw.protocol;
+    },
+  };
 }
