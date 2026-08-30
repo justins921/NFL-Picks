@@ -2,6 +2,7 @@ import { createClient, type Client } from "@libsql/client";
 import { drizzle } from "drizzle-orm/libsql";
 import { mkdirSync } from "node:fs";
 import { dirname } from "node:path";
+import { withBootstrap } from "./bootstrap";
 import * as schema from "./schema";
 
 /**
@@ -23,7 +24,9 @@ if (url.startsWith("file:")) {
 // Next reloads modules on every edit in dev; reuse one client so we don't leak
 // connections on each hot reload.
 const globalForDb = globalThis as unknown as { __picksClient?: Client };
-const client = globalForDb.__picksClient ?? createClient({ url, authToken });
+// withBootstrap creates the tables on first use, so pointing this at an empty
+// database is all the setup a new deployment needs.
+const client = globalForDb.__picksClient ?? withBootstrap(createClient({ url, authToken }));
 globalForDb.__picksClient = client;
 
 export const db = drizzle(client, { schema });

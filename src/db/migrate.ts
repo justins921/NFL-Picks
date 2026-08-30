@@ -1,7 +1,7 @@
 import { client } from "./index";
 
 /** Creates the tables if they aren't there yet. Safe to re-run. */
-const STATEMENTS = [
+export const STATEMENTS = [
   `CREATE TABLE IF NOT EXISTS users (
      id INTEGER PRIMARY KEY AUTOINCREMENT,
      name TEXT NOT NULL,

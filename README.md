@@ -11,7 +11,7 @@ No money, no spreads to beat, no betting links — just who you think wins.
 ```bash
 npm install
 cp .env.example .env.local   # then edit the PIN and secret
-npm run db:setup             # creates the tables and a demo family
+npm run db:setup             # optional: the app also does this on first run
 npm run dev                  # http://localhost:3000
 ```
 
@@ -58,6 +58,10 @@ first `npm run db:seed`.
   save what the report said at the time, so a Thursday injury update doesn't
   quietly rewrite what you were looking at when you picked.
 - **Times are shown in Central** with the local weekday.
+- **An empty database installs itself.** The first query creates the tables and
+  the starting family, so a new deployment needs no setup step. The seed only
+  fires when the users table is genuinely empty — since removing someone is a
+  soft delete, a redeploy never brings them back.
 - **Bye weeks** need no special handling — a team on bye simply has no game, and
   the week view lists who's off.
 
@@ -115,18 +119,13 @@ driver.
    database, and copy its **URL** (`libsql://<name>.turso.io`) and an **auth
    token**.
 
-2. **Create the tables and the family**, once. Either paste
-   [`scripts/setup.sql`](scripts/setup.sql) into Turso's SQL runner — no local
-   checkout needed — or, if you have the repo cloned:
+2. **Nothing to run.** The app creates its own tables the first time it talks
+   to an empty database, and seeds the starting family. Skip to the next step.
 
-   ```bash
-   DATABASE_URL=libsql://<name>.turso.io \
-   DATABASE_AUTH_TOKEN=<token> \
-   npm run db:setup
-   ```
-
-   Edit the names at the bottom of that file first if you want your real family
-   from the start. You can also add and remove people later in the app.
+   (If you'd rather set it up explicitly, paste
+   [`scripts/setup.sql`](scripts/setup.sql) into your provider's SQL console, or
+   run `npm run db:setup` with those credentials from a local checkout. Both do
+   the same thing.)
 
 3. **Import the repo** at [vercel.com/new](https://vercel.com/new). Everything is
    detected automatically — no build settings to change.
