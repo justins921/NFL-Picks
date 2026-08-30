@@ -49,17 +49,16 @@ export default async function MyPicksPage({
   const season = current.season;
 
   const slate = await getWeekSlate(season, REGULAR_SEASON, week);
-  const myPicks = getPicksForWeek(user.id, season, REGULAR_SEASON, week);
+  const myPicks = await getPicksForWeek(user.id, season, REGULAR_SEASON, week);
   const pickByGame = new Map(myPicks.map((p) => [p.gameId, p.pickedTeamId]));
 
-  const cached = db
+  const cached = await db
     .select()
     .from(gamesTable)
-    .where(and(eq(gamesTable.season, season), eq(gamesTable.seasonType, REGULAR_SEASON), eq(gamesTable.week, week)))
-    .all();
+    .where(and(eq(gamesTable.season, season), eq(gamesTable.seasonType, REGULAR_SEASON), eq(gamesTable.week, week)));
   const cachedById = new Map(cached.map((g) => [g.id, g]));
 
-  const standings = getStandings(season, REGULAR_SEASON);
+  const standings = await getStandings(season, REGULAR_SEASON);
   const me = standings.find((r) => r.userId === user.id);
   const weekRecord = me?.weeklyRecords.find((w) => w.week === week);
 

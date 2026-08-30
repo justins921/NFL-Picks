@@ -11,20 +11,24 @@ No money, no spreads to beat, no betting links — just who you think wins.
 ```bash
 npm install
 cp .env.example .env.local   # then edit the PIN and secret
-npm run db:seed              # creates the database and a demo family
+npm run db:setup             # creates the tables and a demo family
 npm run dev                  # http://localhost:3000
 ```
+
+Locally the database is just a file at `./data/picks.db` — nothing to sign up
+for.
 
 Sign in with the `FAMILY_PIN` from your `.env.local`, then tap your name.
 
 ### Environment variables
 
-| Variable         | What it does                                                     | Default            |
-| ---------------- | ---------------------------------------------------------------- | ------------------ |
-| `FAMILY_PIN`     | The shared PIN that gates the whole site.                          | `1234`             |
-| `SESSION_SECRET` | Signs the session cookies. Use a long random string in production. | dev-only fallback  |
-| `DATABASE_PATH`  | Where the SQLite file lives.                                       | `./data/picks.db`  |
-| `NFL_SEASON`     | Season to fall back to if ESPN doesn't say.                        | `2026`             |
+| Variable              | What it does                                                       | Default                 |
+| --------------------- | ------------------------------------------------------------------ | ----------------------- |
+| `FAMILY_PIN`          | The shared PIN that gates the whole site.                            | `1234`                  |
+| `SESSION_SECRET`      | Signs the session cookies. Use a long random string in production.   | dev-only fallback       |
+| `DATABASE_URL`        | `file:./data/picks.db` locally, or a `libsql://…` URL when hosted.   | `file:./data/picks.db`  |
+| `DATABASE_AUTH_TOKEN` | Only needed for a hosted database.                                   | —                       |
+| `NFL_SEASON`          | Season to fall back to if ESPN doesn't say.                          | `2026`                  |
 
 Changing `FAMILY_PIN` signs everyone out, which is the easiest way to revoke
 access from a device you no longer want in.
@@ -99,15 +103,46 @@ npm run build
 
 `npm test` uses a throwaway database and refuses to run against your real one.
 
-## Deploying
+## Deploying to Vercel
 
-Any Node host works. The database is a SQLite file, so the only requirement is a
-**persistent disk** mounted wherever `DATABASE_PATH` points — Fly, Railway, a
-Raspberry Pi on the shelf, whatever's easiest.
+Vercel wipes the filesystem on every deploy, so the database can't be a file
+there — picks would vanish. The fix is a hosted SQLite database
+([Turso](https://turso.tech), free tier). It speaks the same dialect, so nothing
+in this app changes between local and hosted: same schema, same queries, same
+driver.
 
-Vercel's filesystem is ephemeral, so on Vercel point the app at Postgres instead
-(swap the Drizzle driver in `src/db/index.ts`; the schema in `src/db/schema.ts`
-carries over as-is).
+1. **Create the database.** Sign in at [turso.tech](https://turso.tech), create a
+   database, and copy its **URL** (`libsql://<name>.turso.io`) and an **auth
+   token**.
 
-Set a real `SESSION_SECRET` and a `FAMILY_PIN` you're happy sharing with the
-family before you put it online.
+2. **Create the tables and the family**, once, from your laptop:
+
+   ```bash
+   DATABASE_URL=libsql://<name>.turso.io \
+   DATABASE_AUTH_TOKEN=<token> \
+   npm run db:setup
+   ```
+
+3. **Import the repo** at [vercel.com/new](https://vercel.com/new). Everything is
+   detected automatically — no build settings to change.
+
+4. **Add four environment variables** in Vercel (Settings → Environment
+   Variables):
+
+   | Name                  | Value                                     |
+   | --------------------- | ----------------------------------------- |
+   | `FAMILY_PIN`          | the PIN you'll share with the family       |
+   | `SESSION_SECRET`      | a long random string                       |
+   | `DATABASE_URL`        | `libsql://<name>.turso.io`                 |
+   | `DATABASE_AUTH_TOKEN` | your Turso token                           |
+
+5. **Deploy.** Send everyone the URL and the PIN.
+
+Redeploys are safe — the database lives outside Vercel, so picks and standings
+survive. Step 2 only needs running again if you change the schema.
+
+### Hosting it somewhere else
+
+Anywhere that runs Node works. On a host with a persistent disk (Fly, Railway, a
+Raspberry Pi on the shelf) you can skip Turso entirely and keep
+`DATABASE_URL=file:/some/persistent/path/picks.db`.

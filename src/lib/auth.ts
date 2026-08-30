@@ -67,7 +67,8 @@ export async function getCurrentUser(): Promise<User | null> {
   const id = Number(idPart);
   if (!Number.isInteger(id)) return null;
 
-  return db.select().from(users).where(and(eq(users.id, id), eq(users.active, true))).get() ?? null;
+  const rows = await db.select().from(users).where(and(eq(users.id, id), eq(users.active, true))).limit(1);
+  return rows[0] ?? null;
 }
 
 export async function setCurrentUser(userId: number): Promise<void> {
@@ -93,8 +94,9 @@ export async function signOutCompletely(): Promise<void> {
   jar.delete(GATE_COOKIE);
 }
 
-export function listFamily(): User[] {
-  return db.select().from(users).where(eq(users.active, true)).all().sort((a, b) => a.name.localeCompare(b.name));
+export async function listFamily(): Promise<User[]> {
+  const rows = await db.select().from(users).where(eq(users.active, true));
+  return rows.sort((a, b) => a.name.localeCompare(b.name));
 }
 
 export async function requireUser(): Promise<User | null> {

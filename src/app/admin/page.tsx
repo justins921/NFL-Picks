@@ -19,11 +19,13 @@ export default async function AdminPage() {
   if (!user.isAdmin) redirect("/");
 
   const current = await getCurrentWeek();
-  const rows = getStandings(current.season, REGULAR_SEASON);
+  const rows = await getStandings(current.season, REGULAR_SEASON);
   const me = rows.find((r) => r.userId === user.id);
 
-  const active = db.select().from(users).where(eq(users.active, true)).all();
-  const inactive = db.select().from(users).where(eq(users.active, false)).all();
+  const [active, inactive] = await Promise.all([
+    db.select().from(users).where(eq(users.active, true)),
+    db.select().from(users).where(eq(users.active, false)),
+  ]);
 
   return (
     <div className="flex min-h-dvh flex-col">

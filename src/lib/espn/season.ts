@@ -56,10 +56,19 @@ function isLiveWindow(games: Game[]): boolean {
   return games.some((g) => g.state === "in");
 }
 
-/** Mirrors each game's outcome into our DB so standings never depend on ESPN. */
-function persistGames(games: Game[]) {
-  for (const g of games) {
-    db.insert(gamesTable)
+/**
+ * Mirrors each game's outcome into our DB so standings never depend on ESPN.
+ *
+ * Sent as one batch: this runs on every week render, and against a hosted
+ * database sixteen separate round trips would be the slowest thing on the page.
+ */
+async function persistGames(games: Game[]) {
+  if (games.length === 0) return;
+  const now = new Date().toISOString();
+
+  const statements = games.map((g) =>
+    db
+      .insert(gamesTable)
       .values({
         id: g.id,
         season: g.season,
@@ -75,7 +84,7 @@ function persistGames(games: Game[]) {
         state: g.state,
         completed: g.completed,
         winnerTeamId: g.winnerTeamId,
-        updatedAt: new Date().toISOString(),
+        updatedAt: now,
       })
       .onConflictDoUpdate({
         target: gamesTable.id,
@@ -88,11 +97,12 @@ function persistGames(games: Game[]) {
           winnerTeamId: g.winnerTeamId,
           week: g.week,
           seasonType: g.seasonType,
-          updatedAt: new Date().toISOString(),
+          updatedAt: now,
         },
-      })
-      .run();
-  }
+      }),
+  );
+
+  await db.batch(statements as [(typeof statements)[number], ...typeof statements]);
 }
 
 export async function getWeekSlate(season: number, seasonType: number, week: number): Promise<WeekSlate> {
@@ -107,7 +117,7 @@ export async function getWeekSlate(season: number, seasonType: number, week: num
     if (live) slate = normalizeSlate(live, { season, seasonType, week });
   }
 
-  persistGames(slate.games);
+  await persistGames(slate.games);
   return slate;
 }
 
@@ -123,8 +133,9 @@ interface Snapshot {
   injuries: { home: Injury[]; away: Injury[] } | null;
 }
 
-function readSnapshot(gameId: string): Snapshot | null {
-  const row = db.select().from(gameSnapshots).where(eq(gameSnapshots.gameId, gameId)).get();
+async function readSnapshot(gameId: string): Promise<Snapshot | null> {
+  const rows = await db.select().from(gameSnapshots).where(eq(gameSnapshots.gameId, gameId)).limit(1);
+  const row = rows[0];
   if (!row) return null;
   try {
     return {
@@ -136,16 +147,16 @@ function readSnapshot(gameId: string): Snapshot | null {
   }
 }
 
-function writeSnapshot(gameId: string, snap: Snapshot) {
-  db.insert(gameSnapshots)
+async function writeSnapshot(gameId: string, snap: Snapshot) {
+  await db
+    .insert(gameSnapshots)
     .values({
       gameId,
       capturedAt: new Date().toISOString(),
       winProbability: snap.winProbability ? JSON.stringify(snap.winProbability) : null,
       injuries: snap.injuries ? JSON.stringify(snap.injuries) : null,
     })
-    .onConflictDoNothing()
-    .run();
+    .onConflictDoNothing();
 }
 
 /**
@@ -174,7 +185,8 @@ async function getTeamStats(season: number, teamId: string): Promise<TeamSeasonS
 }
 
 export async function getGameDetail(eventId: string): Promise<GameDetail | null> {
-  const cached = db.select().from(gamesTable).where(eq(gamesTable.id, eventId)).get();
+  const cachedRows = await db.select().from(gamesTable).where(eq(gamesTable.id, eventId)).limit(1);
+  const cached = cachedRows[0];
   const live = cached?.state === "in";
 
   const summary = await fetchSummary(eventId, live);
@@ -215,7 +227,7 @@ export async function getGameDetail(eventId: string): Promise<GameDetail | null>
   const awayId = game.away.id;
 
   const locked = isLocked(game);
-  const existing = locked ? readSnapshot(eventId) : null;
+  const existing = locked ? await readSnapshot(eventId) : null;
 
   const liveInjuries = {
     home: normalizeInjuries(summary, homeId),
@@ -236,7 +248,7 @@ export async function getGameDetail(eventId: string): Promise<GameDetail | null>
     if (existing.winProbability) winProbability = existing.winProbability;
     snapshotted = true;
   } else if (locked) {
-    writeSnapshot(eventId, {
+    await writeSnapshot(eventId, {
       winProbability: liveProbability,
       injuries: injuriesAvailable ? liveInjuries : null,
     });
@@ -250,7 +262,7 @@ export async function getGameDetail(eventId: string): Promise<GameDetail | null>
     getTeamStats(season, awayId),
   ]);
 
-  if (game.completed) persistGames([game]);
+  if (game.completed) await persistGames([game]);
 
   return {
     game,

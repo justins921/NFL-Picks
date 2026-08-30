@@ -25,13 +25,12 @@ export function getPicksForWeek(userId: number, season: number, seasonType: numb
         eq(picksTable.seasonType, seasonType),
         eq(picksTable.week, week),
       ),
-    )
-    .all();
+    );
 }
 
-export function getPicksForGames(gameIds: string[]) {
+export async function getPicksForGames(gameIds: string[]) {
   if (gameIds.length === 0) return [];
-  return db.select().from(picksTable).where(inArray(picksTable.gameId, gameIds)).all();
+  return db.select().from(picksTable).where(inArray(picksTable.gameId, gameIds));
 }
 
 /** A tie is a push — nobody gets credit, nobody takes a loss. */
@@ -50,14 +49,15 @@ export type SavePickOutcome =
  * here on the server — the disabled buttons in the UI are a convenience, not
  * the rule.
  */
-export function savePick(userId: number, game: Game, pickedTeamId: string): SavePickOutcome {
+export async function savePick(userId: number, game: Game, pickedTeamId: string): Promise<SavePickOutcome> {
   if (pickedTeamId !== game.home.id && pickedTeamId !== game.away.id) {
     return { ok: false, reason: "unknown-game" };
   }
   if (isLocked(game)) return { ok: false, reason: "locked" };
 
   const now = new Date().toISOString();
-  db.insert(picksTable)
+  await db
+    .insert(picksTable)
     .values({
       userId,
       gameId: game.id,
@@ -71,8 +71,7 @@ export function savePick(userId: number, game: Game, pickedTeamId: string): Save
     .onConflictDoUpdate({
       target: [picksTable.userId, picksTable.gameId],
       set: { pickedTeamId, updatedAt: now },
-    })
-    .run();
+    });
 
   return { ok: true };
 }
@@ -88,20 +87,19 @@ function streakLabelSort(a: StandingsRow, b: StandingsRow): number {
  * Season standings, graded straight off our own cached game results so a
  * family member's record doesn't move if ESPN is down.
  */
-export function getStandings(season: number, seasonType: number): StandingsRow[] {
-  const allUsers = db.select().from(users).where(eq(users.active, true)).all();
-
-  const allPicks = db
-    .select()
-    .from(picksTable)
-    .where(and(eq(picksTable.season, season), eq(picksTable.seasonType, seasonType)))
-    .all();
-
-  const allGames = db
-    .select()
-    .from(gamesTable)
-    .where(and(eq(gamesTable.season, season), eq(gamesTable.seasonType, seasonType)))
-    .all();
+export async function getStandings(season: number, seasonType: number): Promise<StandingsRow[]> {
+  // One round trip instead of three — this runs on every standings render.
+  const [allUsers, allPicks, allGames] = await Promise.all([
+    db.select().from(users).where(eq(users.active, true)),
+    db
+      .select()
+      .from(picksTable)
+      .where(and(eq(picksTable.season, season), eq(picksTable.seasonType, seasonType))),
+    db
+      .select()
+      .from(gamesTable)
+      .where(and(eq(gamesTable.season, season), eq(gamesTable.seasonType, seasonType))),
+  ]);
 
   const gameById = new Map(allGames.map((g) => [g.id, g]));
 

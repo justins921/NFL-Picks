@@ -71,7 +71,7 @@ export default async function GameDetailPage({ params }: { params: Promise<{ id:
   const { game, injuries, stats, lastFive } = detail;
   const locked = isLocked(game);
 
-  const myPick = getPicksForGames([game.id]).find((p) => p.userId === user.id) ?? null;
+  const myPick = (await getPicksForGames([game.id])).find((p) => p.userId === user.id) ?? null;
   const result = myPick ? gradePick(myPick.pickedTeamId, game) : "pending";
   const pickedTeam =
     myPick?.pickedTeamId === game.home.id ? game.home : myPick?.pickedTeamId === game.away.id ? game.away : null;

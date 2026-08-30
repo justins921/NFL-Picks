@@ -30,7 +30,8 @@ export async function chooseMember(_prev: string | null, formData: FormData): Pr
   const userId = Number(formData.get("userId"));
   if (!Number.isInteger(userId)) return "Pick a name.";
 
-  const user = db.select().from(users).where(and(eq(users.id, userId), eq(users.active, true))).get();
+  const found = await db.select().from(users).where(and(eq(users.id, userId), eq(users.active, true))).limit(1);
+  const user = found[0];
   if (!user) return "That family member no longer exists.";
 
   // A personal PIN is optional. When one is set, it's required.
@@ -79,7 +80,7 @@ export async function makePick(_prev: PickActionState, formData: FormData): Prom
   const game = slate.games.find((g) => g.id === gameId);
   if (!game) return { error: "Couldn't find that game." };
 
-  const result = savePick(user.id, game, teamId);
+  const result = await savePick(user.id, game, teamId);
   if (!result.ok) {
     return {
       error: result.reason === "locked" ? "That game already kicked off." : "Couldn't save that pick.",
@@ -107,19 +108,17 @@ export async function addMember(_prev: string | null, formData: FormData): Promi
   if (!name) return "Give them a name.";
   if (name.length > 40) return "That name is a bit long.";
 
-  const existing = db.select().from(users).where(eq(users.name, name)).get();
+  const [existing] = await db.select().from(users).where(eq(users.name, name)).limit(1);
   if (existing) {
     if (existing.active) return `${name} is already on the list.`;
     // Reactivate rather than duplicating, so their old picks come back too.
-    db.update(users).set({ active: true }).where(eq(users.id, existing.id)).run();
+    await db.update(users).set({ active: true }).where(eq(users.id, existing.id));
     revalidatePath("/admin");
     return null;
   }
 
   const pin = String(formData.get("pin") ?? "").trim();
-  db.insert(users)
-    .values({ name, pin: pin || null, isAdmin: false })
-    .run();
+  await db.insert(users).values({ name, pin: pin || null, isAdmin: false });
 
   revalidatePath("/admin");
   revalidatePath("/login");
@@ -133,7 +132,7 @@ export async function removeMember(formData: FormData): Promise<void> {
   if (!Number.isInteger(userId)) return;
 
   // Soft delete: their picks stay in the table so past standings still add up.
-  db.update(users).set({ active: false }).where(eq(users.id, userId)).run();
+  await db.update(users).set({ active: false }).where(eq(users.id, userId));
 
   revalidatePath("/admin");
   revalidatePath("/login");
@@ -147,19 +146,18 @@ export async function toggleAdmin(formData: FormData): Promise<void> {
   const userId = Number(formData.get("userId"));
   if (!Number.isInteger(userId)) return;
 
-  const target = db.select().from(users).where(eq(users.id, userId)).get();
+  const [target] = await db.select().from(users).where(eq(users.id, userId)).limit(1);
   if (!target) return;
 
   // Don't let the last admin demote themselves out of the admin page.
   if (target.isAdmin) {
-    const otherAdmins = db
+    const otherAdmins = await db
       .select()
       .from(users)
-      .where(and(eq(users.isAdmin, true), eq(users.active, true), ne(users.id, userId)))
-      .all();
+      .where(and(eq(users.isAdmin, true), eq(users.active, true), ne(users.id, userId)));
     if (otherAdmins.length === 0) return;
   }
 
-  db.update(users).set({ isAdmin: !target.isAdmin }).where(eq(users.id, userId)).run();
+  await db.update(users).set({ isAdmin: !target.isAdmin }).where(eq(users.id, userId));
   revalidatePath("/admin");
 }

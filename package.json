@@ -8,12 +8,13 @@
     "start": "next start",
     "lint": "eslint .",
     "typecheck": "tsc --noEmit",
-    "db:push": "drizzle-kit push",
-    "db:seed": "tsx src/db/seed.ts",
-    "test": "DATABASE_PATH=./data/test.db rm -f ./data/test.db* && DATABASE_PATH=./data/test.db tsx --conditions=react-server scripts/verify.mts"
+    "test": "rm -f ./data/test.db* && DATABASE_URL=file:./data/test.db tsx --conditions=react-server scripts/verify.mts",
+    "db:setup": "npm run db:migrate && npm run db:seed",
+    "db:migrate": "tsx scripts/migrate.mts",
+    "db:seed": "tsx src/db/seed.mts"
   },
   "dependencies": {
-    "better-sqlite3": "^13.0.3",
+    "@libsql/client": "^0.17.4",
     "drizzle-orm": "^0.45.2",
     "next": "^15.5.24",
     "react": "^19.2.8",
@@ -22,7 +23,6 @@
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4.3.3",
-    "@types/better-sqlite3": "^9.6.0",
     "@types/node": "^26.4.0",
     "@types/react": "^19.2.18",
     "@types/react-dom": "^19.2.5",

@@ -6,18 +6,20 @@
  */
 /** Exercises lock-at-kickoff and grading against a scratch database. */
 
-if (!process.env.DATABASE_PATH?.includes("test")) {
-  console.error("Refusing to run: set DATABASE_PATH to a throwaway file (npm test does this).");
+if (!process.env.DATABASE_URL?.includes("test")) {
+  console.error("Refusing to run: set DATABASE_URL to a throwaway file (npm test does this).");
   process.exit(1);
 }
 
 import { db } from "@/db";
+import { migrate } from "@/db/migrate";
 import { games, picks, users } from "@/db/schema";
 import { gradePick, getStandings, savePick, formatStreak } from "@/lib/picks";
 import { isLocked } from "@/lib/espn/season";
 import type { Game, Team } from "@/lib/types";
 
-db.delete(picks).run(); db.delete(games).run(); db.delete(users).run();
+await migrate();
+await db.delete(picks); await db.delete(games); await db.delete(users);
 
 const team = (id: string, abbr: string): Team => ({
   id, abbreviation: abbr, displayName: abbr, shortName: abbr, location: abbr,
@@ -42,22 +44,23 @@ const check = (label: string, got: unknown, want: unknown) => {
   else fail++;
 };
 
-db.insert(users).values([{ id: 1, name: "A" }, { id: 2, name: "B" }]).run();
+await db.insert(users).values([{ id: 1, name: "A" }, { id: 2, name: "B" }]);
 
 // --- lock behaviour ---
 check("future game is open", isLocked(mkGame("1", future, 1)), false);
 check("past kickoff is locked", isLocked(mkGame("2", past, 1)), true);
 check("in-progress game is locked", isLocked({ ...mkGame("3", future, 1), state: "in" }), true);
 
-check("pick on open game saves", savePick(1, mkGame("1", future, 1), "H1"), { ok: true });
-check("pick after kickoff refused", savePick(1, mkGame("2", past, 1), "H2"), { ok: false, reason: "locked" });
+check("pick on open game saves", await savePick(1, mkGame("1", future, 1), "H1"), { ok: true });
+check("pick after kickoff refused", await savePick(1, mkGame("2", past, 1), "H2"), { ok: false, reason: "locked" });
 check("pick for a team not in the game refused",
-  savePick(1, mkGame("1", future, 1), "ZZZ"), { ok: false, reason: "unknown-game" });
+  await savePick(1, mkGame("1", future, 1), "ZZZ"), { ok: false, reason: "unknown-game" });
 
 // changing an open pick overwrites rather than duplicating
-savePick(1, mkGame("1", future, 1), "A1");
-check("changing a pick keeps one row", db.select().from(picks).all().length, 1);
-check("changed pick stored", db.select().from(picks).all()[0].pickedTeamId, "A1");
+await savePick(1, mkGame("1", future, 1), "A1");
+const afterChange = await db.select().from(picks);
+check("changing a pick keeps one row", afterChange.length, 1);
+check("changed pick stored", afterChange[0].pickedTeamId, "A1");
 
 // --- grading ---
 check("win", gradePick("H9", { completed: true, winnerTeamId: "H9" }), "win");
@@ -66,27 +69,27 @@ check("tie is a push", gradePick("H9", { completed: true, winnerTeamId: "TIE" })
 check("unfinished game is pending", gradePick("H9", { completed: false, winnerTeamId: null }), "pending");
 
 // --- standings over a finished stretch ---
-db.delete(picks).run();
+await db.delete(picks);
 const results: [string, number, string][] = [
   // gameId, week, winner
   ["g1", 1, "Hg1"], ["g2", 1, "Hg2"], ["g3", 2, "Ag3"], ["g4", 2, "TIE"], ["g5", 3, "Hg5"],
 ];
-results.forEach(([id, week, winner], i) => {
-  db.insert(games).values({
+for (const [i, [id, week, winner]] of results.entries()) {
+  await db.insert(games).values({
     id, season: 2026, seasonType: 2, week,
     kickoff: new Date(Date.now() - (10 - i) * 86_400_000).toISOString(),
     homeTeamId: "H" + id, awayTeamId: "A" + id, homeAbbr: "HOM", awayAbbr: "AWY",
     homeScore: 20, awayScore: 17, state: "post", completed: true, winnerTeamId: winner,
-  }).run();
-});
+  });
+}
 
 // A picks the home team every time; B picks away every time.
 for (const [id, week] of results) {
-  db.insert(picks).values({ userId: 1, gameId: id, season: 2026, seasonType: 2, week, pickedTeamId: "H" + id }).run();
-  db.insert(picks).values({ userId: 2, gameId: id, season: 2026, seasonType: 2, week, pickedTeamId: "A" + id }).run();
+  await db.insert(picks).values({ userId: 1, gameId: id, season: 2026, seasonType: 2, week, pickedTeamId: "H" + id });
+  await db.insert(picks).values({ userId: 2, gameId: id, season: 2026, seasonType: 2, week, pickedTeamId: "A" + id });
 }
 
-const table = getStandings(2026, 2);
+const table = await getStandings(2026, 2);
 const A = table.find((r) => r.name === "A")!;
 const B = table.find((r) => r.name === "B")!;
 

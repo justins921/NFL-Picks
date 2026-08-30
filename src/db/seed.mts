@@ -3,6 +3,7 @@
  * Safe to re-run: existing names are left alone.
  */
 import { db } from "./index";
+import { migrate } from "./migrate";
 import { users } from "./schema";
 
 const FAMILY = [
@@ -14,10 +15,12 @@ const FAMILY = [
   { name: "Grandpa", isAdmin: false },
 ];
 
+await migrate();
+
 for (const member of FAMILY) {
-  db.insert(users).values(member).onConflictDoNothing().run();
+  await db.insert(users).values(member).onConflictDoNothing();
 }
 
-const all = db.select().from(users).all();
+const all = await db.select().from(users);
 console.log(`Seeded. ${all.length} family members:`);
 for (const u of all) console.log(`  - ${u.name}${u.isAdmin ? " (admin)" : ""}`);

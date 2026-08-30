@@ -14,7 +14,7 @@ export default async function StandingsPage() {
   if (!user) redirect("/login");
 
   const current = await getCurrentWeek();
-  const rows = getStandings(current.season, REGULAR_SEASON);
+  const rows = await getStandings(current.season, REGULAR_SEASON);
   const me = rows.find((r) => r.userId === user.id);
 
   // Weeks anyone has a graded result in, so the by-week grid stays compact.
