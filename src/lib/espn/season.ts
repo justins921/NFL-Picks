@@ -6,6 +6,7 @@ import { isLocked } from "../lock";
 import { fillMissedPicks } from "../picks";
 import type { Game, GameDetail, Injury, TeamSeasonStats, WeekSlate, WinProbability } from "../types";
 import {
+  fetchClosingOdds,
   fetchCurrentScoreboard,
   fetchScoreboard,
   fetchSummary,
@@ -13,6 +14,7 @@ import {
   fetchTeamSeasonStats,
 } from "./client";
 import {
+  closingFavorite,
   normalizeInjuries,
   normalizeLastFive,
   normalizeGame,
@@ -124,6 +126,38 @@ async function persistGames(games: Game[]) {
   await db.batch(statements as [(typeof statements)[number], ...typeof statements]);
 }
 
+/**
+ * Records who was favoured for locked games that never got a line.
+ *
+ * The favourite is normally captured while a game is still upcoming, but that
+ * only happens if somebody opens the app in that window — for a Thursday night
+ * game, often nobody does. This recovers it afterwards from the closing line,
+ * which is fixed at kickoff and so still says nothing about the result.
+ *
+ * Only ever fills a blank; a favourite recorded before kickoff is never
+ * replaced.
+ */
+async function backfillFavorites(rows: { id: string; homeTeamId: string; awayTeamId: string; favoriteTeamId: string | null }[]) {
+  const missing = rows.filter((r) => r.favoriteTeamId === null);
+  if (missing.length === 0) return;
+
+  const found = await Promise.all(
+    missing.map(async (row) => {
+      const odds = await fetchClosingOdds(row.id);
+      const favorite = odds ? closingFavorite(odds, row.homeTeamId, row.awayTeamId) : null;
+      return favorite ? { id: row.id, favorite } : null;
+    }),
+  );
+
+  const updates = found.filter((f): f is { id: string; favorite: string } => f !== null);
+  if (updates.length === 0) return;
+
+  const statements = updates.map((u) =>
+    db.update(gamesTable).set({ favoriteTeamId: u.favorite }).where(eq(gamesTable.id, u.id)),
+  );
+  await db.batch(statements as [(typeof statements)[number], ...typeof statements]);
+}
+
 export async function getWeekSlate(season: number, seasonType: number, week: number): Promise<WeekSlate> {
   const first = await fetchScoreboard(season, seasonType, week, false);
   if (!first) return { meta: { season, seasonType, week, teamsOnBye: [] }, games: [] };
@@ -141,11 +175,9 @@ export async function getWeekSlate(season: number, seasonType: number, week: num
   // Anyone who missed a kickoff gets the favourite, so every week is complete.
   const locked = slate.games.filter((g) => isLocked(g));
   if (locked.length > 0) {
-    const rows = await db
-      .select()
-      .from(gamesTable)
-      .where(inArray(gamesTable.id, locked.map((g) => g.id)));
-    await fillMissedPicks(rows);
+    const ids = locked.map((g) => g.id);
+    await backfillFavorites(await db.select().from(gamesTable).where(inArray(gamesTable.id, ids)));
+    await fillMissedPicks(await db.select().from(gamesTable).where(inArray(gamesTable.id, ids)));
   }
 
   return slate;

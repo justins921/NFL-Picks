@@ -5,6 +5,7 @@ import type {
   EspnOdds,
   EspnScoreboard,
   EspnSummary,
+  EspnClosingOdds,
   EspnTeamRecord,
   EspnTeamStats,
 } from "./client";
@@ -282,4 +283,28 @@ export function normalizeTeamRecord(data: EspnTeamRecord): {
     pointsPerGame: stat("avgPointsFor"),
     pointsAllowedPerGame: stat("avgPointsAgainst"),
   };
+}
+
+/**
+ * Which side the closing line favoured, as a team id.
+ *
+ * Decided from the closing moneylines rather than the payload's own `favorite`
+ * flags, so the reasoning is explicit: the shorter price is the favourite. The
+ * flags are only a fallback for when a price is missing.
+ */
+export function closingFavorite(
+  data: EspnClosingOdds,
+  homeTeamId: string,
+  awayTeamId: string,
+): string | null {
+  for (const item of data.items ?? []) {
+    const home = parseAmerican(item.homeTeamOdds?.close?.moneyLine?.american);
+    const away = parseAmerican(item.awayTeamOdds?.close?.moneyLine?.american);
+    if (home !== null && away !== null && home !== away) {
+      return home < away ? homeTeamId : awayTeamId;
+    }
+    if (item.homeTeamOdds?.favorite === true) return homeTeamId;
+    if (item.awayTeamOdds?.favorite === true) return awayTeamId;
+  }
+  return null;
 }

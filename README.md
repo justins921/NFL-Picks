@@ -59,10 +59,12 @@ first `npm run db:seed`.
   quietly rewrite what you were looking at when you picked.
 - **Times are shown in Central** with the local weekday.
 - **Forgetting doesn't cost you the game.** If a game kicks off and you haven't
-  picked, the app gives you the favourite. It reads the line recorded while the
-  game was still upcoming — falling back to the home team if no line was ever
-  seen — so a fill can never be influenced by the score or the result. Auto-picks
-  are labelled as such wherever they appear, since the family can see them.
+  picked, the app gives you the favourite. The favourite comes from the line
+  recorded while the game was still upcoming, or — for a game nobody opened the
+  app for beforehand — from the closing line, which is fixed at kickoff and kept
+  by ESPN afterwards. Only if neither exists does it fall back to the home team.
+  None of those can be swayed by the score or the result. Auto-picks are labelled
+  as such wherever they appear, since the family can see them.
 - **Nobody sees anyone else's picks until kickoff.** Everyone's picks appear on
   a game the moment it starts, and not before. The guarantee isn't hidden markup
   — picks for a game that's still open are never loaded from the database, so

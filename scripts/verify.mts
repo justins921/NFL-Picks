@@ -104,6 +104,25 @@ check("A week 1 record", A.weeklyRecords.find((w) => w.week === 1), { week: 1, w
 check("A week 2 record", A.weeklyRecords.find((w) => w.week === 2), { week: 2, wins: 0, losses: 1, pushes: 1 });
 check("pushes excluded from win pct", A.winPct, 0.75);
 
+// --- the closing line tells us who was favoured, after the fact ---
+{
+  const { closingFavorite } = await import("@/lib/espn/normalize");
+  const ml = (home: string, away: string) => ({
+    items: [{
+      homeTeamOdds: { close: { moneyLine: { american: home } } },
+      awayTeamOdds: { close: { moneyLine: { american: away } } },
+    }],
+  });
+
+  check("the shorter price is the favourite (home)", closingFavorite(ml("-245", "+200"), "H", "A"), "H");
+  check("the shorter price is the favourite (away)", closingFavorite(ml("+160", "-190"), "H", "A"), "A");
+  check("a pick'em has no favourite", closingFavorite(ml("-110", "-110"), "H", "A"), null);
+  check("no prices, no guess", closingFavorite({ items: [{}] }, "H", "A"), null);
+  check("no odds at all, no guess", closingFavorite({}, "H", "A"), null);
+  check("falls back to the payload's own flag",
+    closingFavorite({ items: [{ awayTeamOdds: { favorite: true } }] }, "H", "A"), "A");
+}
+
 // --- a missed pick is filled with the favourite at kickoff ---
 {
   await db.delete(picks);

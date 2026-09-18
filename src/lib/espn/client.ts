@@ -54,6 +54,19 @@ export function fetchTeamSeasonStats(season: number, teamId: string) {
 }
 
 /**
+ * The closing line for one game — the last price before kickoff.
+ *
+ * The scoreboard drops its odds block the moment a game starts, but this keeps
+ * the closing numbers indefinitely. That makes it the one way to learn who was
+ * favoured for a game nobody opened the app for beforehand, and it is still
+ * pre-kickoff information, so reading it can't be swayed by the result.
+ */
+export function fetchClosingOdds(eventId: string) {
+  const url = `${CORE}/events/${eventId}/competitions/${eventId}/odds`;
+  return get<EspnClosingOdds>(url, TTL.seasonStats);
+}
+
+/**
  * Season record. This is the only same-season source for points allowed —
  * the statistics endpoint above reports it as 0.
  */
@@ -168,6 +181,14 @@ export interface EspnSummary {
     }[];
   }[];
   boxscore?: { teams?: { team?: EspnTeam; statistics?: { name?: string; displayValue?: string }[] }[] };
+}
+
+export interface EspnClosingOdds {
+  items?: {
+    details?: string;
+    homeTeamOdds?: { favorite?: boolean; close?: { moneyLine?: { american?: string } } };
+    awayTeamOdds?: { favorite?: boolean; close?: { moneyLine?: { american?: string } } };
+  }[];
 }
 
 export interface EspnTeamRecord {
