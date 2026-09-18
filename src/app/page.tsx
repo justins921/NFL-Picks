@@ -1,6 +1,7 @@
 import Image from "next/image";
 import { redirect } from "next/navigation";
 import { BottomNav } from "@/components/BottomNav";
+import { SetupProblem } from "@/components/SetupProblem";
 import { GameCard } from "@/components/GameCard";
 import { Header } from "@/components/Header";
 import { WeekSelector } from "@/components/WeekSelector";
@@ -14,7 +15,7 @@ import {
   getWeekProgress,
   gradePick,
 } from "@/lib/picks";
-import { db } from "@/db";
+import { db, describeDbError } from "@/db";
 import { games as gamesTable } from "@/db/schema";
 import { and, eq } from "drizzle-orm";
 import { WEEKS_IN_REGULAR_SEASON } from "@/lib/constants";
@@ -27,23 +28,12 @@ function parseWeek(raw: string | undefined, fallback: number): number {
   return Number.isInteger(n) && n >= 1 && n <= WEEKS_IN_REGULAR_SEASON ? n : fallback;
 }
 
-export default async function WeekPage({
-  searchParams,
-}: {
-  searchParams: Promise<{ week?: string }>;
-}) {
-  if (!(await hasFamilyAccess())) redirect("/login");
-  const user = await getCurrentUser();
-  if (!user) redirect("/login");
 
-  const params = await searchParams;
-  const current = await getCurrentWeek();
-  const week = parseWeek(params.week, current.week);
-  const season = current.season;
-
+/** All the data the week view needs, so a failure can be caught in one place. */
+async function loadWeek(season: number, week: number, userId: number) {
   const slate = await getWeekSlate(season, REGULAR_SEASON, week);
 
-  const myPicks = await getPicksForWeek(user.id, season, REGULAR_SEASON, week);
+  const myPicks = await getPicksForWeek(userId, season, REGULAR_SEASON, week);
   const pickByGame = new Map(myPicks.map((p) => [p.gameId, p.pickedTeamId]));
 
   // Grade against our own cached rows so results survive an ESPN outage.
@@ -52,9 +42,6 @@ export default async function WeekPage({
     .from(gamesTable)
     .where(and(eq(gamesTable.season, season), eq(gamesTable.seasonType, REGULAR_SEASON), eq(gamesTable.week, week)));
   const cachedById = new Map(cachedGames.map((g) => [g.id, g]));
-
-  const standings = await getStandings(season, REGULAR_SEASON);
-  const myRow = standings.find((r) => r.userId === user.id);
 
   // Everyone's picks are revealed only once a game has kicked off, and the
   // gating happens here: picks for games still open are never loaded, so they
@@ -80,6 +67,47 @@ export default async function WeekPage({
       away: forTeam(forGame, game.away.id),
     });
   }
+
+  const standings = await getStandings(season, REGULAR_SEASON);
+
+  return { slate, pickByGame, cachedById, standings, revealedByGame, progress };
+}
+
+export default async function WeekPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ week?: string }>;
+}) {
+  if (!(await hasFamilyAccess())) redirect("/login");
+  const user = await getCurrentUser();
+  if (!user) redirect("/login");
+
+  const params = await searchParams;
+  const current = await getCurrentWeek();
+  const week = parseWeek(params.week, current.week);
+  const season = current.season;
+
+  let loaded: Awaited<ReturnType<typeof loadWeek>>;
+  try {
+    loaded = await loadWeek(season, week, user.id);
+  } catch (error) {
+    // The slate needs the database as well as ESPN. If it can't be reached,
+    // say so rather than handing back an opaque server error.
+    console.error("[pickem] week view failed to load:", error);
+    return (
+      <div className="flex min-h-dvh flex-col">
+        <Header user={user} record={{ wins: 0, losses: 0, pushes: 0 }} />
+        <main className="mx-auto w-full max-w-3xl flex-1 px-4 py-4">
+          <SetupProblem detail={describeDbError(error)} />
+        </main>
+        <BottomNav isAdmin={user.isAdmin} />
+      </div>
+    );
+  }
+
+  const { slate, pickByGame, cachedById, standings, revealedByGame, progress } = loaded;
+
+  const myRow = standings.find((r) => r.userId === user.id);
 
   const openGames = slate.games.filter((g) => !isLocked(g));
   const madeOnOpen = openGames.filter((g) => pickByGame.has(g.id)).length;

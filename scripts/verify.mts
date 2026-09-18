@@ -104,6 +104,65 @@ check("A week 1 record", A.weeklyRecords.find((w) => w.week === 1), { week: 1, w
 check("A week 2 record", A.weeklyRecords.find((w) => w.week === 2), { week: 2, wins: 0, losses: 1, pushes: 1 });
 check("pushes excluded from win pct", A.winPct, 0.75);
 
+// --- the app's own setup must upgrade an older database, not just build a new one ---
+// This is the failure that reached production: columns added later lived only
+// in the db:migrate script, while a deployed app sets itself up through the
+// bootstrap path. Nobody runs the script against a hosted database, so the new
+// columns were never added and every query naming one failed.
+{
+  const { createClient } = await import("@libsql/client");
+  const { withBootstrap } = await import("@/db/bootstrap");
+  const { unlinkSync } = await import("node:fs");
+
+  const path = "./data/test-upgrade.db";
+  for (const suffix of ["", "-wal", "-shm"]) {
+    try { unlinkSync(path + suffix); } catch { /* not there yet */ }
+  }
+
+  const raw = createClient({ url: `file:${path}` });
+  // An older release's schema: the tables exist, the later columns don't.
+  await raw.execute(`CREATE TABLE picks (id INTEGER PRIMARY KEY, user_id INTEGER,
+    game_id TEXT, season INTEGER, season_type INTEGER, week INTEGER,
+    picked_team_id TEXT, created_at TEXT, updated_at TEXT)`);
+  await raw.execute(`CREATE TABLE games (id TEXT PRIMARY KEY, season INTEGER,
+    season_type INTEGER, week INTEGER, kickoff TEXT, home_team_id TEXT,
+    away_team_id TEXT, home_abbr TEXT, away_abbr TEXT, home_score INTEGER,
+    away_score INTEGER, state TEXT, completed INTEGER, winner_team_id TEXT,
+    updated_at TEXT)`);
+
+  const before = await raw.execute("PRAGMA table_info(games)");
+  check("starts without the later column", before.rows.some((r) => r.name === "favorite_team_id"), false);
+
+  // Any query through the app's client triggers setup.
+  await withBootstrap(raw).execute("SELECT 1");
+
+  const picksCols = await raw.execute("PRAGMA table_info(picks)");
+  const gamesCols = await raw.execute("PRAGMA table_info(games)");
+  check("the app adds picks.auto to an older database",
+    picksCols.rows.some((r) => r.name === "auto"), true);
+  check("the app adds games.favorite_team_id to an older database",
+    gamesCols.rows.some((r) => r.name === "favorite_team_id"), true);
+}
+
+// --- adding a column must survive several instances starting at once ---
+// SQLite has no "ADD COLUMN IF NOT EXISTS", so the presence check isn't atomic.
+// A deploy cold-starts several instances together; before this was handled, all
+// but one died on "duplicate column name" and every request they served failed.
+{
+  const { createClient } = await import("@libsql/client");
+  const { migrate: migrateAgain } = await import("@/db/migrate");
+
+  const settled = await Promise.allSettled([
+    migrateAgain(), migrateAgain(), migrateAgain(), migrateAgain(),
+  ]);
+  const failures = settled.filter((r) => r.status === "rejected");
+  check("four concurrent migrations all succeed", failures.length, 0);
+  if (failures.length > 0) {
+    console.log("   ->", String((failures[0] as PromiseRejectedResult).reason).slice(0, 120));
+  }
+  void createClient;
+}
+
 // --- the closing line tells us who was favoured, after the fact ---
 {
   const { closingFavorite } = await import("@/lib/espn/normalize");

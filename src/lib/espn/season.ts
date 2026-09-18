@@ -176,8 +176,14 @@ export async function getWeekSlate(season: number, seasonType: number, week: num
   const locked = slate.games.filter((g) => isLocked(g));
   if (locked.length > 0) {
     const ids = locked.map((g) => g.id);
-    await backfillFavorites(await db.select().from(gamesTable).where(inArray(gamesTable.id, ids)));
-    await fillMissedPicks(await db.select().from(gamesTable).where(inArray(gamesTable.id, ids)));
+    try {
+      await backfillFavorites(await db.select().from(gamesTable).where(inArray(gamesTable.id, ids)));
+      await fillMissedPicks(await db.select().from(gamesTable).where(inArray(gamesTable.id, ids)));
+    } catch (error) {
+      // Filling gaps is a convenience; the slate itself is the page. If this
+      // fails the week still renders, and the next load tries again.
+      console.error("[pickem] could not fill missed picks:", error);
+    }
   }
 
   return slate;

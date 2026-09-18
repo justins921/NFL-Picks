@@ -1,5 +1,5 @@
 import type { Client } from "@libsql/client";
-import { STATEMENTS } from "./migrate";
+import { applySchema } from "./schema-setup";
 
 /**
  * The starting family, created only when the users table is completely empty.
@@ -29,10 +29,7 @@ export function createBootstrapper(raw: Client): () => Promise<void> {
   let started: Promise<void> | null = null;
 
   async function run(): Promise<void> {
-    await raw.batch(
-      STATEMENTS.map((sql) => ({ sql, args: [] })),
-      "write",
-    );
+    await applySchema(raw);
 
     const existing = await raw.execute("SELECT COUNT(*) AS n FROM users");
     if (Number(existing.rows[0]?.n ?? 0) > 0) return;
