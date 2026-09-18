@@ -18,7 +18,7 @@ import { db } from "@/db";
 import { games as gamesTable } from "@/db/schema";
 import { and, eq } from "drizzle-orm";
 import { WEEKS_IN_REGULAR_SEASON } from "@/lib/constants";
-import type { Game } from "@/lib/types";
+import type { Game, RevealedPick } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
 
@@ -65,13 +65,19 @@ export default async function WeekPage({
     getWeekProgress(season, REGULAR_SEASON, week),
   ]);
 
-  const revealedByGame = new Map<string, { home: string[]; away: string[] }>();
+  const revealedByGame = new Map<string, { home: RevealedPick[]; away: RevealedPick[] }>();
+  const forTeam = (list: typeof familyPicks, teamId: string): RevealedPick[] =>
+    list
+      .filter((p) => p.pickedTeamId === teamId)
+      .map((p) => ({ name: p.name, auto: p.auto }))
+      .sort((a, b) => a.name.localeCompare(b.name));
+
   for (const game of slate.games) {
     const forGame = familyPicks.filter((p) => p.gameId === game.id);
     if (forGame.length === 0) continue;
     revealedByGame.set(game.id, {
-      home: forGame.filter((p) => p.pickedTeamId === game.home.id).map((p) => p.name).sort(),
-      away: forGame.filter((p) => p.pickedTeamId === game.away.id).map((p) => p.name).sort(),
+      home: forTeam(forGame, game.home.id),
+      away: forTeam(forGame, game.away.id),
     });
   }
 

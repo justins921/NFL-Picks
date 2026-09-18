@@ -1,7 +1,9 @@
 import "server-only";
-import { eq } from "drizzle-orm";
+import { eq, inArray } from "drizzle-orm";
 import { db } from "@/db";
 import { gameSnapshots, games as gamesTable } from "@/db/schema";
+import { isLocked } from "../lock";
+import { fillMissedPicks } from "../picks";
 import type { Game, GameDetail, Injury, TeamSeasonStats, WeekSlate, WinProbability } from "../types";
 import {
   fetchCurrentScoreboard,
@@ -62,6 +64,20 @@ function isLiveWindow(games: Game[]): boolean {
  * Sent as one batch: this runs on every week render, and against a hosted
  * database sixteen separate round trips would be the slowest thing on the page.
  */
+/**
+ * Who the market made favourite, read only while the game is still upcoming.
+ * Once it kicks off ESPN stops publishing a line, and anything it did publish
+ * would reflect the game in progress — so this returns null after that and the
+ * stored value from before kickoff is kept instead.
+ */
+function favoriteOf(game: Game): string | null {
+  if (game.state !== "pre") return null;
+  const p = game.winProbability;
+  if (!p) return null;
+  if (p.home === p.away) return null;
+  return p.home > p.away ? game.home.id : game.away.id;
+}
+
 async function persistGames(games: Game[]) {
   if (games.length === 0) return;
   const now = new Date().toISOString();
@@ -84,6 +100,7 @@ async function persistGames(games: Game[]) {
         state: g.state,
         completed: g.completed,
         winnerTeamId: g.winnerTeamId,
+        favoriteTeamId: favoriteOf(g),
         updatedAt: now,
       })
       .onConflictDoUpdate({
@@ -97,6 +114,8 @@ async function persistGames(games: Game[]) {
           winnerTeamId: g.winnerTeamId,
           week: g.week,
           seasonType: g.seasonType,
+          // Keep the last line seen before kickoff rather than clearing it.
+          ...(favoriteOf(g) ? { favoriteTeamId: favoriteOf(g) } : {}),
           updatedAt: now,
         },
       }),
@@ -118,15 +137,21 @@ export async function getWeekSlate(season: number, seasonType: number, week: num
   }
 
   await persistGames(slate.games);
+
+  // Anyone who missed a kickoff gets the favourite, so every week is complete.
+  const locked = slate.games.filter((g) => isLocked(g));
+  if (locked.length > 0) {
+    const rows = await db
+      .select()
+      .from(gamesTable)
+      .where(inArray(gamesTable.id, locked.map((g) => g.id)));
+    await fillMissedPicks(rows);
+  }
+
   return slate;
 }
 
-/** True once kickoff has passed — picks are frozen from this moment. */
-export function isLocked(game: Pick<Game, "kickoff" | "state">, now = Date.now()): boolean {
-  if (game.state !== "pre") return true;
-  const kickoff = new Date(game.kickoff).getTime();
-  return Number.isFinite(kickoff) && now >= kickoff;
-}
+export { isLocked } from "../lock";
 
 interface Snapshot {
   winProbability: WinProbability | null;

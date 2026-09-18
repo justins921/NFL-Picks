@@ -14,7 +14,7 @@ if (!process.env.DATABASE_URL?.includes("test")) {
 import { db } from "@/db";
 import { migrate } from "@/db/migrate";
 import { games, picks, users } from "@/db/schema";
-import { gradePick, getStandings, savePick, formatStreak, getFamilyPicksForLockedGames } from "@/lib/picks";
+import { gradePick, getStandings, savePick, formatStreak, getFamilyPicksForLockedGames, fillMissedPicks } from "@/lib/picks";
 import { isLocked } from "@/lib/espn/season";
 import type { Game, Team } from "@/lib/types";
 
@@ -103,6 +103,56 @@ check("standings sorted by wins", table.map((r) => r.name), ["A", "B"]);
 check("A week 1 record", A.weeklyRecords.find((w) => w.week === 1), { week: 1, wins: 2, losses: 0, pushes: 0 });
 check("A week 2 record", A.weeklyRecords.find((w) => w.week === 2), { week: 2, wins: 0, losses: 1, pushes: 1 });
 check("pushes excluded from win pct", A.winPct, 0.75);
+
+// --- a missed pick is filled with the favourite at kickoff ---
+{
+  await db.delete(picks);
+  await db.delete(games);
+
+  const base = {
+    season: 2026, seasonType: 2, week: 3, kickoff: past,
+    awayTeamId: "AWAY", homeAbbr: "HOM", awayAbbr: "AWY",
+    homeScore: null, awayScore: null, state: "post" as const,
+  };
+  await db.insert(games).values([
+    // a line was recorded before kickoff, and the underdog went on to win
+    { ...base, id: "fav", homeTeamId: "HOME", favoriteTeamId: "AWAY",
+      completed: true, winnerTeamId: "HOME" },
+    // no line was ever seen, so the home team is the fallback
+    { ...base, id: "noline", homeTeamId: "HOME", favoriteTeamId: null,
+      completed: true, winnerTeamId: "AWAY" },
+  ]);
+
+  // user 1 picked one game themselves; user 2 picked nothing
+  await db.insert(picks).values({
+    userId: 1, gameId: "fav", season: 2026, seasonType: 2, week: 3, pickedTeamId: "HOME",
+  });
+
+  const lockedRows = await db.select().from(games);
+  const filled = await fillMissedPicks(lockedRows);
+  check("fills only the gaps", filled, 3);
+
+  const all = await db.select().from(picks);
+  const of = (u: number, g: string) => all.find((p) => p.userId === u && p.gameId === g);
+
+  check("a real pick is left alone", [of(1, "fav")?.pickedTeamId, of(1, "fav")?.auto], ["HOME", false]);
+  check("a gap takes the recorded favourite", of(2, "fav")?.pickedTeamId, "AWAY");
+  check("the filled pick is flagged as auto", of(2, "fav")?.auto, true);
+  check("with no line recorded, the home team is used", of(1, "noline")?.pickedTeamId, "HOME");
+
+  // The favourite lost "fav" and the home fallback lost "noline": if the fill
+  // were reading results rather than pre-kickoff data, these would be winners.
+  check("filling never picks the winner by peeking at the result",
+    [of(2, "fav")?.pickedTeamId === "HOME", of(1, "noline")?.pickedTeamId === "AWAY"],
+    [false, false]);
+
+  const again = await fillMissedPicks(lockedRows);
+  check("running twice adds nothing", again, 0);
+  check("and leaves the row count alone", (await db.select().from(picks)).length, 4);
+
+  await db.delete(picks);
+  await db.delete(games);
+}
 
 // --- other people's picks are only readable once a game has locked ---
 // The guarantee is that unlocked picks are never loaded, so the check that

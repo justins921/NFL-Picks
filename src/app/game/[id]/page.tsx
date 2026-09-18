@@ -76,8 +76,13 @@ export default async function GameDetailPage({ params }: { params: Promise<{ id:
   // Nothing is loaded for a game that hasn't started, so there is no way to
   // read another person's pick early.
   const familyPicks = locked ? await getFamilyPicksForLockedGames([game.id]) : [];
-  const pickedHome = familyPicks.filter((p) => p.pickedTeamId === game.home.id).map((p) => p.name).sort();
-  const pickedAway = familyPicks.filter((p) => p.pickedTeamId === game.away.id).map((p) => p.name).sort();
+  const forTeam = (teamId: string) =>
+    familyPicks
+      .filter((p) => p.pickedTeamId === teamId)
+      .map((p) => ({ name: p.name, auto: p.auto }))
+      .sort((a, b) => a.name.localeCompare(b.name));
+  const pickedHome = forTeam(game.home.id);
+  const pickedAway = forTeam(game.away.id);
   const result = myPick ? gradePick(myPick.pickedTeamId, game) : "pending";
   const pickedTeam =
     myPick?.pickedTeamId === game.home.id ? game.home : myPick?.pickedTeamId === game.away.id ? game.away : null;
@@ -144,7 +149,7 @@ export default async function GameDetailPage({ params }: { params: Promise<{ id:
                       : "border-line bg-surface-2 text-chalk"
               }`}
             >
-              You picked {pickedTeam.shortName}
+              {myPick?.auto ? "Auto-picked" : "You picked"} {pickedTeam.shortName}
               {result === "win" ? " — nice call." : result === "loss" ? " — no dice." : result === "push" ? " — push." : locked ? " (locked)" : ""}
             </p>
           ) : locked ? (
@@ -190,10 +195,10 @@ export default async function GameDetailPage({ params }: { params: Promise<{ id:
                       <p className="text-xs text-muted">—</p>
                     ) : (
                       <ul className="flex flex-col gap-1">
-                        {names.map((name) => (
+                        {names.map((entry) => (
                           <li
-                            key={name}
-                            className={`rounded-lg px-2 py-1 text-sm ${
+                            key={entry.name}
+                            className={`flex items-baseline gap-1.5 rounded-lg px-2 py-1 text-sm ${
                               won
                                 ? "bg-win/15 text-win"
                                 : lost
@@ -201,7 +206,10 @@ export default async function GameDetailPage({ params }: { params: Promise<{ id:
                                   : "bg-surface-2"
                             }`}
                           >
-                            {name}
+                            {entry.name}
+                            {entry.auto ? (
+                              <span className="text-[10px] font-bold text-muted uppercase">auto</span>
+                            ) : null}
                           </li>
                         ))}
                       </ul>

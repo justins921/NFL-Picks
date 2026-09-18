@@ -53,6 +53,24 @@ export const STATEMENTS = [
    )`,
 ];
 
+/**
+ * Columns added after the first release. SQLite has no "ADD COLUMN IF NOT
+ * EXISTS", so each one is checked against the table first — that keeps the
+ * migration safe to re-run against a database that already has them.
+ */
+const ADDED_COLUMNS: { table: string; column: string; definition: string }[] = [
+  { table: "picks", column: "auto", definition: "INTEGER NOT NULL DEFAULT 0" },
+  { table: "games", column: "favorite_team_id", definition: "TEXT" },
+];
+
 export async function migrate(): Promise<void> {
   for (const sql of STATEMENTS) await client.execute(sql);
+
+  for (const { table, column, definition } of ADDED_COLUMNS) {
+    const info = await client.execute(`PRAGMA table_info(${table})`);
+    const present = info.rows.some((row) => row.name === column);
+    if (!present) {
+      await client.execute(`ALTER TABLE ${table} ADD COLUMN ${column} ${definition}`);
+    }
+  }
 }

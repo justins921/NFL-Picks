@@ -35,6 +35,8 @@ export const picks = sqliteTable(
     seasonType: integer("season_type").notNull(),
     week: integer("week").notNull(),
     pickedTeamId: text("picked_team_id").notNull(),
+    /** True when the app filled this in at kickoff because nobody picked. */
+    auto: integer("auto", { mode: "boolean" }).notNull().default(false),
     createdAt: text("created_at")
       .notNull()
       .default(sql`(current_timestamp)`),
@@ -70,6 +72,12 @@ export const games = sqliteTable(
     completed: integer("completed", { mode: "boolean" }).notNull().default(false),
     /** ESPN team id of the winner, or "TIE" when the game ended level. */
     winnerTeamId: text("winner_team_id"),
+    /**
+     * Who was favoured, recorded while the game was still upcoming. Auto-picks
+     * read this rather than anything from after kickoff, so filling one in can
+     * never be influenced by how the game is going.
+     */
+    favoriteTeamId: text("favorite_team_id"),
     updatedAt: text("updated_at")
       .notNull()
       .default(sql`(current_timestamp)`),

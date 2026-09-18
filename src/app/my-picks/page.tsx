@@ -51,6 +51,7 @@ export default async function MyPicksPage({
   const slate = await getWeekSlate(season, REGULAR_SEASON, week);
   const myPicks = await getPicksForWeek(user.id, season, REGULAR_SEASON, week);
   const pickByGame = new Map(myPicks.map((p) => [p.gameId, p.pickedTeamId]));
+  const pickRowByGame = new Map(myPicks.map((p) => [p.gameId, p]));
 
   const cached = await db
     .select()
@@ -103,6 +104,7 @@ export default async function MyPicksPage({
         <div className="mt-4 flex flex-col gap-2">
           {slate.games.map((game) => {
             const pickedId = pickByGame.get(game.id) ?? null;
+            const pickedRow = pickRowByGame.get(game.id);
             const row = cachedById.get(game.id);
             const result: PickResult = pickedId
               ? gradePick(pickedId, {
@@ -133,7 +135,11 @@ export default async function MyPicksPage({
                     {game.away.abbreviation} @ {game.home.abbreviation}
                   </span>
                   <span className="block truncate text-xs text-muted">
-                    {picked ? `You picked ${picked.shortName}` : locked ? "No pick made" : "Not picked yet"}
+                    {picked
+                      ? `${pickedRow?.auto ? "Auto-pick" : "You picked"}: ${picked.shortName}`
+                      : locked
+                        ? "No pick made"
+                        : "Not picked yet"}
                     {" · "}
                     {game.completed ? game.statusDetail || "Final" : formatKickoff(game.kickoff)}
                   </span>

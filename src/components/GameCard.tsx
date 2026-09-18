@@ -5,7 +5,7 @@ import Link from "next/link";
 import { useActionState, useOptimistic, useTransition } from "react";
 import { makePick, type PickActionState } from "@/app/actions";
 import { formatTime } from "@/lib/format";
-import type { Game, PickResult, Team } from "@/lib/types";
+import type { Game, PickResult, RevealedPick, Team } from "@/lib/types";
 
 interface Props {
   game: Game;
@@ -17,7 +17,7 @@ interface Props {
    * all for a game that hasn't kicked off, so there is no hidden data here to
    * be dug out of the page.
    */
-  revealed?: { home: string[]; away: string[] } | null;
+  revealed?: { home: RevealedPick[]; away: RevealedPick[] } | null;
 }
 
 function scoreline(game: Game, team: Team): string | null {
@@ -58,7 +58,7 @@ function TeamRow({
   result: PickResult;
   onPick: () => void;
   pending: boolean;
-  pickedBy: string[];
+  pickedBy: RevealedPick[];
 }) {
   const score = scoreline(game, team);
   const isWinner = game.completed && game.winnerTeamId === team.id;
@@ -103,12 +103,18 @@ function TeamRow({
         </span>
         {pickedBy.length > 0 ? (
           <span className="mt-1 flex flex-wrap gap-1">
-            {pickedBy.map((name) => (
+            {pickedBy.map((p) => (
               <span
-                key={name}
-                className="rounded-full bg-surface-2 px-1.5 py-0.5 text-[10px] font-bold text-muted"
+                key={p.name}
+                title={p.auto ? "Auto-picked at kickoff — no pick was made in time" : undefined}
+                className={`rounded-full px-1.5 py-0.5 text-[10px] font-bold ${
+                  p.auto
+                    ? "border border-dashed border-line text-muted/80"
+                    : "bg-surface-2 text-muted"
+                }`}
               >
-                {name}
+                {p.name}
+                {p.auto ? " · auto" : ""}
               </span>
             ))}
           </span>

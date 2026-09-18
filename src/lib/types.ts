@@ -130,6 +130,13 @@ export interface GameDetail {
 
 export type PickResult = "win" | "loss" | "push" | "pending";
 
+/** A family member's pick on a game that has already kicked off. */
+export interface RevealedPick {
+  name: string;
+  /** Filled in by the app at kickoff rather than chosen. */
+  auto: boolean;
+}
+
 export interface StandingsRow {
   userId: number;
   name: string;

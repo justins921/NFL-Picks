@@ -3,7 +3,7 @@ import { and, eq, inArray } from "drizzle-orm";
 import { db } from "@/db";
 import { games as gamesTable, picks as picksTable, users } from "@/db/schema";
 import type { Game, PickResult, StandingsRow } from "./types";
-import { isLocked } from "./espn/season";
+import { isLocked } from "./lock";
 
 export { formatStreak } from "./types";
 export type { PickResult, StandingsRow } from "./types";
@@ -42,6 +42,8 @@ export interface FamilyPick {
   userId: number;
   name: string;
   pickedTeamId: string;
+  /** Filled in by the app at kickoff rather than chosen. */
+  auto: boolean;
 }
 
 /**
@@ -63,10 +65,62 @@ export async function getFamilyPicksForLockedGames(lockedGameIds: string[]): Pro
       userId: picksTable.userId,
       name: users.name,
       pickedTeamId: picksTable.pickedTeamId,
+      auto: picksTable.auto,
     })
     .from(picksTable)
     .innerJoin(users, eq(picksTable.userId, users.id))
     .where(inArray(picksTable.gameId, lockedGameIds));
+}
+
+/**
+ * Gives anyone who didn't pick in time the favourite, once a game has kicked
+ * off, so everybody carries a full slate.
+ *
+ * The team comes from `favoriteTeamId`, which is recorded while the game is
+ * still upcoming, falling back to the home team when no line was ever seen.
+ * Neither can be influenced by how the game actually went — this deliberately
+ * never reads the score, the winner, or any odds published after kickoff.
+ *
+ * Existing picks are left alone: the insert defers to the unique index on
+ * (user, game), so a real pick is never overwritten and two page loads racing
+ * each other can't produce duplicates.
+ */
+export async function fillMissedPicks(
+  lockedGames: { id: string; season: number; seasonType: number; week: number; homeTeamId: string; favoriteTeamId: string | null }[],
+): Promise<number> {
+  if (lockedGames.length === 0) return 0;
+
+  const [family, existing] = await Promise.all([
+    db.select().from(users).where(eq(users.active, true)),
+    db
+      .select({ userId: picksTable.userId, gameId: picksTable.gameId })
+      .from(picksTable)
+      .where(inArray(picksTable.gameId, lockedGames.map((g) => g.id))),
+  ]);
+  if (family.length === 0) return 0;
+
+  const already = new Set(existing.map((p) => `${p.userId}:${p.gameId}`));
+  const now = new Date().toISOString();
+
+  const missing = lockedGames.flatMap((game) =>
+    family
+      .filter((u) => !already.has(`${u.id}:${game.id}`))
+      .map((u) => ({
+        userId: u.id,
+        gameId: game.id,
+        season: game.season,
+        seasonType: game.seasonType,
+        week: game.week,
+        pickedTeamId: game.favoriteTeamId ?? game.homeTeamId,
+        auto: true,
+        createdAt: now,
+        updatedAt: now,
+      })),
+  );
+  if (missing.length === 0) return 0;
+
+  await db.insert(picksTable).values(missing).onConflictDoNothing();
+  return missing.length;
 }
 
 /** How far through the week each family member is. Counts only — no teams. */
