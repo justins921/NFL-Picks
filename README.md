@@ -42,6 +42,12 @@ one, hand out admin, or remove someone.
 Removing is a soft delete — their past picks stay put so finished weeks still
 add up. Adding the same name back brings them and their history along.
 
+Someone who joins partway through the season has no picks on games that have
+already been played. **Fill missing picks for earlier weeks** on the same page
+gives them the favourite for each of those, exactly as if they had missed a
+kickoff. It is safe to press at any time: it never changes a pick anyone made,
+and pressing it twice does nothing the second time.
+
 To change the starting family, edit the list in `src/db/seed.ts` before your
 first `npm run db:seed`.
 

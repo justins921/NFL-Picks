@@ -2,9 +2,9 @@
 
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
-import { and, eq, ne } from "drizzle-orm";
+import { and, count, eq, ne } from "drizzle-orm";
 import { db } from "@/db";
-import { users } from "@/db/schema";
+import { picks, users } from "@/db/schema";
 import {
   checkFamilyPin,
   clearCurrentUser,
@@ -14,7 +14,7 @@ import {
   setCurrentUser,
   signOutCompletely,
 } from "@/lib/auth";
-import { getWeekSlate } from "@/lib/espn/season";
+import { getCurrentWeek, getWeekSlate, REGULAR_SEASON } from "@/lib/espn/season";
 import { savePick } from "@/lib/picks";
 
 export async function submitFamilyPin(_prev: string | null, formData: FormData): Promise<string | null> {
@@ -137,6 +137,62 @@ export async function removeMember(formData: FormData): Promise<void> {
   revalidatePath("/admin");
   revalidatePath("/login");
   revalidatePath("/standings");
+}
+
+/**
+ * Gives everyone who is missing a pick on an already-started game the favourite,
+ * across every week of the season so far.
+ *
+ * The same filling happens on its own whenever a week is opened, but only for
+ * that week — so somebody who joins midway is left with gaps until each earlier
+ * week happens to be viewed. This closes them all in one go.
+ *
+ * It reuses the ordinary week load, which records the pre-kickoff favourite (or
+ * recovers it from the closing line) before filling, so a backfilled pick is
+ * chosen exactly the way a live one would have been and never from the result.
+ * Existing picks are never touched.
+ */
+export async function backfillPicks(_prev: string | null): Promise<string | null> {
+  if (!(await requireAdmin())) return "Only an admin can do that.";
+
+  const current = await getCurrentWeek();
+
+  const countPicks = async () => {
+    const [row] = await db
+      .select({ n: count() })
+      .from(picks)
+      .where(and(eq(picks.season, current.season), eq(picks.seasonType, REGULAR_SEASON)));
+    return row?.n ?? 0;
+  };
+
+  const before = await countPicks();
+  const failed: number[] = [];
+
+  for (let week = 1; week <= current.week; week++) {
+    try {
+      await getWeekSlate(current.season, REGULAR_SEASON, week);
+    } catch (error) {
+      console.error(`[pickem] backfill failed for week ${week}:`, error);
+      failed.push(week);
+    }
+  }
+
+  const added = (await countPicks()) - before;
+
+  revalidatePath("/");
+  revalidatePath("/my-picks");
+  revalidatePath("/standings");
+  revalidatePath("/admin");
+
+  const weeks = `week${current.week === 1 ? "" : "s"} 1\u2013${current.week}`;
+  const summary =
+    added === 0
+      ? `Nothing to fill \u2014 everyone already has a pick on every game that has started (${weeks}).`
+      : `Filled ${added} missing pick${added === 1 ? "" : "s"} across ${weeks}.`;
+
+  return failed.length > 0
+    ? `${summary} Week${failed.length === 1 ? "" : "s"} ${failed.join(", ")} couldn't be reached \u2014 try again.`
+    : summary;
 }
 
 export async function toggleAdmin(formData: FormData): Promise<void> {

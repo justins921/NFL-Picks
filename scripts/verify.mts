@@ -224,9 +224,19 @@ check("pushes excluded from win pct", A.winPct, 0.75);
     [of(2, "fav")?.pickedTeamId === "HOME", of(1, "noline")?.pickedTeamId === "AWAY"],
     [false, false]);
 
+  // Somebody joining partway through the season is the reason the admin
+  // backfill exists: they have no picks at all on games already played.
+  await db.insert(users).values({ id: 3, name: "C" });
+  const forNewcomer = await fillMissedPicks(lockedRows);
+  check("a member who joins later is filled in", forNewcomer, 2);
+  const theirs = (await db.select().from(picks)).filter((p) => p.userId === 3);
+  check("and only with auto picks", theirs.every((p) => p.auto), true);
+  check("without disturbing anyone else's count",
+    (await db.select().from(picks)).filter((p) => p.userId !== 3).length, 4);
+
   const again = await fillMissedPicks(lockedRows);
   check("running twice adds nothing", again, 0);
-  check("and leaves the row count alone", (await db.select().from(picks)).length, 4);
+  check("and leaves the row count alone", (await db.select().from(picks)).length, 6);
 
   await db.delete(picks);
   await db.delete(games);

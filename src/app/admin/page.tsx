@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
 import { eq } from "drizzle-orm";
 import { AddMemberForm } from "@/components/AddMemberForm";
+import { BackfillButton } from "@/components/BackfillButton";
 import { BottomNav } from "@/components/BottomNav";
 import { Header } from "@/components/Header";
 import { db } from "@/db";
@@ -11,6 +12,9 @@ import { getCurrentWeek, REGULAR_SEASON } from "@/lib/espn/season";
 import { getStandings } from "@/lib/picks";
 
 export const dynamic = "force-dynamic";
+// Filling a whole season walks every week and may need the closing line for
+// games that never had one recorded, so give it more room than a page render.
+export const maxDuration = 60;
 
 export default async function AdminPage() {
   if (!(await hasFamilyAccess())) redirect("/login");
@@ -41,6 +45,16 @@ export default async function AdminPage() {
         <section className="rounded-2xl border border-line bg-surface/60 p-4">
           <h2 className="mb-3 text-sm font-bold">Add someone</h2>
           <AddMemberForm />
+        </section>
+
+        <section className="mt-4 rounded-2xl border border-line bg-surface/60 p-4">
+          <h2 className="mb-1 text-sm font-bold">Joined partway through?</h2>
+          <p className="mb-3 text-xs text-muted">
+            Anyone added mid-season has no picks on games that already started.
+            This gives them the favourite for those, the same as if they had
+            missed a kickoff. It never changes a pick someone made.
+          </p>
+          <BackfillButton />
         </section>
 
         <section className="mt-4 rounded-2xl border border-line bg-surface/60 p-4">
